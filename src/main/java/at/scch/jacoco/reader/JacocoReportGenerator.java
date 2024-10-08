@@ -6,10 +6,7 @@ import org.jacoco.core.data.ExecutionDataStore;
 import org.jacoco.core.internal.ContentTypeDetector;
 import org.jacoco.report.JavaNames;
 
-import java.io.File;
-import java.io.FileInputStream;
-import java.io.IOException;
-import java.io.InputStream;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
@@ -209,16 +206,22 @@ public class JacocoReportGenerator {
 				final ContentTypeDetector detector = new ContentTypeDetector(in);
 				switch (detector.getType()) {
 					case ContentTypeDetector.CLASSFILE:
-						if(includeClassFile(bins, includes, excludes)){
+						if(includeClassFile(bins.getPath(), includes, excludes)){
 							analyzer.analyzeAll(bins);
 						}
 						break;
 					case ContentTypeDetector.ZIPFILE:
-						// TODO Handle file type ZIPFILE, if a filter in includes or excludes is specified.
-						if(!includes.isEmpty() || !excludes.isEmpty()){
-							System.err.println("Filter are not supported for ZIPFILE files yet.");
+						if(includes.isEmpty() && excludes.isEmpty()){
+							analyzer.analyzeAll(bins);
+						} else {
+							ZipInputStream zip = new ZipInputStream(new FileInputStream(bins));
+							ZipEntry entry;
+							while((entry = nextEntry(zip)) != null){
+								if(entry.getName().endsWith(".class") && includeClassFile(entry.getName(), includes, excludes)) {
+									analyzer.analyzeAll(zip, bins.getPath() + "@" + entry.getName());
+								}
+							}
 						}
-						analyzer.analyzeAll(bins);
 						break;
 					case ContentTypeDetector.GZFILE:
 						// TODO Handle file type GZFILE, if a filter in includes or excludes is specified.
@@ -242,16 +245,16 @@ public class JacocoReportGenerator {
 		}
 	}
 
-	private static boolean includeClassFile(final File classFile, final Set<String> includes, final Set<String> excludes){
-		return includeClassFile(classFile, includes) && !excludeClassFile(classFile, excludes);
+	private static boolean includeClassFile(final String pathToClassFile, final Set<String> includes, final Set<String> excludes){
+		return includeClassFile(pathToClassFile, includes) && !excludeClassFile(pathToClassFile, excludes);
 	}
 
-	private static boolean includeClassFile(final File classFile, final Set<String> includes){
+	private static boolean includeClassFile(final String pathToClassFile, final Set<String> includes){
 		if(includes == null || includes.isEmpty()){
 			return true;
 		}
 
-		String filePath = classFile.getPath().replaceAll("\\\\", "/");
+		String filePath = pathToClassFile.replaceAll("\\\\", "/");
 		for (String include : includes) {
 			String regex = getFileRegexFromPattern(include);
 			if(filePath.matches(regex)){
@@ -262,12 +265,12 @@ public class JacocoReportGenerator {
 		return false;
 	}
 
-	private static boolean excludeClassFile(final File classFile, final Set<String> excludes){
+	private static boolean excludeClassFile(final String pathToClassFile, final Set<String> excludes){
 		if(excludes == null || excludes.isEmpty()){
 			return false;
 		}
 
-		String filePath = classFile.getPath().replaceAll("\\\\", "/");
+		String filePath = pathToClassFile.replaceAll("\\\\", "/");
 		for (String exclude : excludes) {
 			String regex = getFileRegexFromPattern(exclude);
 			if(filePath.matches(regex)){
@@ -280,7 +283,7 @@ public class JacocoReportGenerator {
 
 	private static ZipEntry nextEntry(final ZipInputStream input) {
 		try {
-			return input.getNextEntry();
+            return input.getNextEntry();
 		} catch (final IOException e) {
 			throw new RuntimeException(e);
 		}
